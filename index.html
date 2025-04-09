@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>2-Player Rocket League</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #222;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #2a5c2a;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-size: 24px;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="score">Player 1: 0 - Player 2: 0</div>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+    <div id="controls">
+        Player 1: WASD | Player 2: Arrow Keys | Reset: Space
+    </div>
+
+    <script>
+        // Game canvas and context
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score');
+
+        // Game state
+        let player1Score = 0;
+        let player2Score = 0;
+        let gameRunning = true;
+
+        // Field dimensions
+        const fieldWidth = canvas.width;
+        const fieldHeight = canvas.height;
+        const centerX = fieldWidth / 2;
+        const centerY = fieldHeight / 2;
+
+        // Goals
+        const goalWidth = 80;
+        const goalHeight = 150;
+        const goalDepth = 20;
+
+        // Ball properties
+        const ball = {
+            x: centerX,
+            y: centerY,
+            radius: 15,
+            dx: 0,
+            dy: 0,
+            color: 'white'
+        };
+
+        // Car properties
+        const carWidth = 40;
+        const carHeight = 25;
+        const carSpeed = 5;
+        const carTurnSpeed = 0.1;
+        const boostPower = 1.5;
+
+        // Player 1 (blue car)
+        const player1 = {
+            x: centerX - 150,
+            y: centerY,
+            width: carWidth,
+            height: carHeight,
+            angle: 0,
+            speed: 0,
+            maxSpeed: 8,
+            color: '#3498db',
+            controls: {
+                up: 'w',
+                left: 'a',
+                down: 's',
+                right: 'd',
+                boost: 'shift'
+            },
+            keys: {
+                w: false,
+                a: false,
+                s: false,
+                d: false,
+                shift: false
+            }
+        };
+
+        // Player 2 (orange car)
+        const player2 = {
+            x: centerX + 150,
+            y: centerY,
+            width: carWidth,
+            height: carHeight,
+            angle: Math.PI,
+            speed: 0,
+            maxSpeed: 8,
+            color: '#e67e22',
+            controls: {
+                up: 'arrowup',
+                left: 'arrowleft',
+                down: 'arrowdown',
+                right: 'arrowright',
+                boost: 'control'
+            },
+            keys: {
+                arrowup: false,
+                arrowleft: false,
+                arrowdown: false,
+                arrowright: false,
+                control: false
+            }
+        };
+
+        // Key state tracking
+        const keysPressed = {};
+
+        // Event listeners for keyboard
+        document.addEventListener('keydown', (e) => {
+            keysPressed[e.key.toLowerCase()] = true;
+            
+            // Update player key states
+            updateKeyStates(player1);
+            updateKeyStates(player2);
+            
+            // Reset game with space
+            if (e.key === ' ') {
+                resetGame();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keysPressed[e.key.toLowerCase()] = false;
+            updateKeyStates(player1);
+            updateKeyStates(player2);
+        });
+
+        function updateKeyStates(player) {
+            for (const key in player.keys) {
+                player.keys[key] = keysPressed[key] || false;
+            }
+        }
+
+        // Reset ball and cars to starting positions
+        function resetGame() {
+            ball.x = centerX;
+            ball.y = centerY;
+            ball.dx = 0;
+            ball.dy = 0;
+            
+            player1.x = centerX - 150;
+            player1.y = centerY;
+            player1.angle = 0;
+            player1.speed = 0;
+            
+            player2.x = centerX + 150;
+            player2.y = centerY;
+            player2.angle = Math.PI;
+            player2.speed = 0;
+        }
+
+        // Update game state
+        function update() {
+            if (!gameRunning) return;
+            
+            // Update players
+            updatePlayer(player1);
+            updatePlayer(player2);
+            
+            // Update ball position
+            ball.x += ball.dx;
+            ball.y += ball.dy;
+            
+            // Apply friction to ball
+            ball.dx *= 0.98;
+            ball.dy *= 0.98;
+            
+            // Ball boundary collision
+            if (ball.x - ball.radius < 0) {
+                ball.x = ball.radius;
+                ball.dx *= -0.8;
+            }
+            if (ball.x + ball.radius > fieldWidth) {
+                ball.x = fieldWidth - ball.radius;
+                ball.dx *= -0.8;
+            }
+            if (ball.y - ball.radius < 0) {
+                ball.y = ball.radius;
+                ball.dy *= -0.8;
+            }
+            if (ball.y + ball.radius > fieldHeight) {
+                ball.y = fieldHeight - ball.radius;
+                ball.dy *= -0.8;
+            }
+            
+            // Check for goals
+            checkGoals();
+            
+            // Check car-ball collisions
+            checkCollision(player1);
+            checkCollision(player2);
+            
+            // Check car-car collision
+            checkCarCollision();
+        }
+
+        function updatePlayer(player) {
+            // Handle player input
+            if (player.keys[player.controls.up]) {
+                player.speed = Math.min(player.speed + 0.2, player.maxSpeed);
+            } else if (player.keys[player.controls.down]) {
+                player.speed = Math.max(player.speed - 0.2, -player.maxSpeed / 2);
+            } else {
+                // Slow down when no acceleration
+                player.speed *= 0.95;
+                if (Math.abs(player.speed) < 0.1) player.speed = 0;
+            }
+            
+            if (player.keys[player.controls.left]) {
+                player.angle -= carTurnSpeed;
+            }
+            if (player.keys[player.controls.right]) {
+                player.angle += carTurnSpeed;
+            }
+            
+            // Apply boost
+            const boost = player.keys[player.controls.boost] ? boostPower : 1;
+            
+            // Update position
+            player.x += Math.cos(player.angle) * player.speed * boost;
+            player.y += Math.sin(player.angle) * player.speed * boost;
+            
+            // Boundary check
+            player.x = Math.max(player.width/2, Math.min(fieldWidth - player.width/2, player.x));
+            player.y = Math.max(player.height/2, Math.min(fieldHeight - player.height/2, player.y));
+        }
+
+        function checkCollision(player) {
+            // Simple distance check between car and ball
+            const carCenterX = player.x;
+            const carCenterY = player.y;
+            
+            // Rotated car corners for more accurate collision
+            const cos = Math.cos(player.angle);
+            const sin = Math.sin(player.angle);
+            
+            // Check distance between ball and car center
+            const dx = ball.x - carCenterX;
+            const dy = ball.y - carCenterY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Simple collision detection (circle-rectangle)
+            if (distance < ball.radius + Math.max(player.width, player.height)/2) {
+                // Calculate angle of impact
+                const hitAngle = Math.atan2(dy, dx);
+                
+                // Calculate car's velocity components
+                const carVelX = Math.cos(player.angle) * player.speed;
+                const carVelY = Math.sin(player.angle) * player.speed;
+                
+                // Transfer momentum from car to ball
+                const power = 0.5 + Math.abs(player.speed) * 0.3;
+                ball.dx = carVelX * power + Math.cos(hitAngle) * power * 5;
+                ball.dy = carVelY * power + Math.sin(hitAngle) * power * 5;
+                
+                // Add some randomness
+                ball.dx += (Math.random() - 0.5) * 2;
+                ball.dy += (Math.random() - 0.5) * 2;
+                
+                // Move ball away to prevent sticking
+                const angle = Math.atan2(ball.y - carCenterY, ball.x - carCenterX);
+                ball.x = carCenterX + Math.cos(angle) * (ball.radius + player.width/2 + 5);
+                ball.y = carCenterY + Math.sin(angle) * (ball.radius + player.height/2 + 5);
+            }
+        }
+
+        function checkCarCollision() {
+            // Simple distance check between cars
+            const dx = player1.x - player2.x;
+            const dy = player1.y - player2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distance < (player1.width + player2.width)/2) {
+                // Calculate angle of collision
+                const angle = Math.atan2(dy, dx);
+                
+                // Move cars apart
+                const overlap = (player1.width + player2.width)/2 - distance;
+                const moveX = Math.cos(angle) * overlap * 0.5;
+                const moveY = Math.sin(angle) * overlap * 0.5;
+                
+                player1.x += moveX;
+                player1.y += moveY;
+                player2.x -= moveX;
+                player2.y -= moveY;
+                
+                // Transfer some momentum
+                const tempSpeed = player1.speed * 0.5;
+                player1.speed = player2.speed * 0.5;
+                player2.speed = tempSpeed;
+                
+                // Change angles slightly
+                player1.angle += 0.2;
+                player2.angle -= 0.2;
+            }
+        }
+
+        function checkGoals() {
+            // Player 1 goal (right side)
+            if (ball.x + ball.radius > fieldWidth - goalDepth) {
+                if (ball.y > centerY - goalHeight/2 && ball.y < centerY + goalHeight/2) {
+                    player1Score++;
+                    updateScore();
+                    resetGame();
+                }
+            }
+            
+            // Player 2 goal (left side)
+            if (ball.x - ball.radius < goalDepth) {
+                if (ball.y > centerY - goalHeight/2 && ball.y < centerY + goalHeight/2) {
+                    player2Score++;
+                    updateScore();
+                    resetGame();
+                }
+            }
+        }
+
+        function updateScore() {
+            scoreDisplay.textContent = `Player 1: ${player1Score} - Player 2: ${player2Score}`;
+        }
+
+        // Draw game elements
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, fieldWidth, fieldHeight);
+            
+            // Draw field
+            drawField();
+            
+            // Draw goals
+            drawGoals();
+            
+            // Draw center line and circle
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(centerX, 0);
+            ctx.lineTo(centerX, fieldHeight);
+            ctx.stroke();
+            
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 50, 0, Math.PI * 2);
+            ctx.stroke();
+            
+            // Draw ball
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ball.color;
+            ctx.fill();
+            
+            // Draw players
+            drawCar(player1);
+            drawCar(player2);
+        }
+
+        function drawField() {
+            // Field background
+            ctx.fillStyle = '#2a5c2a';
+            ctx.fillRect(0, 0, fieldWidth, fieldHeight);
+            
+            // Field markings
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(50, 50, fieldWidth - 100, fieldHeight - 100);
+        }
+
+        function drawGoals() {
+            // Player 1 goal (right side - blue)
+            ctx.fillStyle = 'rgba(52, 152, 219, 0.3)';
+            ctx.fillRect(fieldWidth - goalDepth, centerY - goalHeight/2, goalDepth, goalHeight);
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(fieldWidth - goalDepth, centerY - goalHeight/2, goalDepth, goalHeight);
+            
+            // Player 2 goal (left side - orange)
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.3)';
+            ctx.fillRect(0, centerY - goalHeight/2, goalDepth, goalHeight);
+            ctx.strokeStyle = '#e67e22';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(0, centerY - goalHeight/2, goalDepth, goalHeight);
+        }
+
+        function drawCar(player) {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.angle);
+            
+            // Car body
+            ctx.fillStyle = player.color;
+            ctx.fillRect(-player.width/2, -player.height/2, player.width, player.height);
+            
+            // Car stripe
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(-player.width/2 + 5, -player.height/2 + 5, player.width - 10, player.height - 10);
+            
+            // Boost indicator
+            if (player.keys[player.controls.boost]) {
+                ctx.fillStyle = 'yellow';
+                ctx.fillRect(player.width/2 - 5, -3, 10, 6);
+            }
+            
+            ctx.restore();
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        resetGame();
+        gameLoop();
+    </script>
+</body>
+</html>
