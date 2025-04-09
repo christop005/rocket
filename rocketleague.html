@@ -1,234 +1,610 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Rocket League Multiplayer</title>
-  <style>
-    body {
-      margin: 0;
-      background: #0f172a;
-      color: white;
-      font-family: 'Segoe UI', sans-serif;
-      text-align: center;
-    }
-    canvas {
-      display: block;
-      margin: 10px auto;
-      background: #1e293b;
-      border: 4px solid #fff;
-      border-radius: 10px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Endless Tower Defense</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #222;
+            color: white;
+        }
+        #game-container {
+            display: flex;
+            gap: 20px;
+        }
+        #game-board {
+            border: 2px solid #444;
+            background-color: #333;
+            position: relative;
+        }
+        #sidebar {
+            width: 250px;
+            background-color: #2a2a2a;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .tower-btn {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background-color: #444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .tower-btn:hover {
+            background-color: #555;
+        }
+        #stats {
+            margin-top: 20px;
+        }
+        #upgrade-panel {
+            margin-top: 20px;
+            display: none;
+        }
+        #wave-info {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        #lives {
+            color: #ff5555;
+            font-weight: bold;
+        }
+        #gold {
+            color: gold;
+            font-weight: bold;
+        }
+        .enemy {
+            position: absolute;
+            border-radius: 50%;
+            transition: all 0.1s linear;
+        }
+        .tower {
+            position: absolute;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: black;
+            font-weight: bold;
+        }
+        .projectile {
+            position: absolute;
+            border-radius: 50%;
+        }
+    </style>
 </head>
 <body>
-  <h1>🚗 Rocket League Multiplayer</h1>
-  <p>Player 1: Arrow Keys + Shift | Player 2: WASD + / | Press <strong>R</strong> to End</p>
-  <canvas id="gameCanvas" width="900" height="500"></canvas>
-  <audio id="goalSound" src="https://freesound.org/data/previews/341/341695_5260877-lq.mp3"></audio>
-  <audio id="hitSound" src="https://freesound.org/data/previews/66/66717_931655-lq.mp3"></audio>
+    <h1>Endless Tower Defense</h1>
+    <div id="game-container">
+        <canvas id="game-board" width="800" height="600"></canvas>
+        <div id="sidebar">
+            <h2>Towers</h2>
+            <button class="tower-btn" data-type="archer">Archer Tower (100g)</button>
+            <button class="tower-btn" data-type="cannon">Cannon Tower (150g)</button>
+            <button class="tower-btn" data-type="mage">Mage Tower (200g)</button>
+            <button class="tower-btn" data-type="ballista">Ballista (250g)</button>
+            <button class="tower-btn" data-type="tesla">Tesla Coil (300g)</button>
+            
+            <div id="stats">
+                <div id="wave-info">Wave: 1</div>
+                <div>Lives: <span id="lives">20</span></div>
+                <div>Gold: <span id="gold">200</span></div>
+                <div>Kills: <span id="kills">0</span></div>
+            </div>
+            
+            <div id="upgrade-panel">
+                <h3>Upgrade Tower</h3>
+                <p>Level: <span id="tower-level">1</span></p>
+                <p>Damage: <span id="tower-damage">10</span></p>
+                <p>Range: <span id="tower-range">100</span></p>
+                <p>Speed: <span id="tower-speed">1.0</span></p>
+                <button id="upgrade-btn">Upgrade (150g)</button>
+                <button id="sell-btn">Sell (75g)</button>
+            </div>
+        </div>
+    </div>
 
-  <script>
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    const goalSound = document.getElementById("goalSound");
-    const hitSound = document.getElementById("hitSound");
+    <script>
+        // Game constants
+        const TOWER_TYPES = {
+            archer: { color: '#8B4513', damage: 10, range: 150, speed: 1.0, cost: 100, projectile: { color: '#CD5C5C', size: 5 } },
+            cannon: { color: '#696969', damage: 25, range: 120, speed: 0.7, cost: 150, projectile: { color: '#FF4500', size: 8 } },
+            mage: { color: '#9370DB', damage: 15, range: 140, speed: 0.9, cost: 200, projectile: { color: '#BA55D3', size: 6 } },
+            ballista: { color: '#556B2F', damage: 40, range: 200, speed: 0.4, cost: 250, projectile: { color: '#7CFC00', size: 7 } },
+            tesla: { color: '#1E90FF', damage: 30, range: 160, speed: 0.6, cost: 300, projectile: { color: '#00BFFF', size: 6 } }
+        };
 
-    const keys = {};
-    document.addEventListener("keydown", e => {
-      keys[e.key] = true;
-      if (e.key === "r" || e.key === "R") gameOver = true;
-    });
-    document.addEventListener("keyup", e => keys[e.key] = false);
+        const ENEMY_TYPES = [
+            { color: '#FF0000', speed: 1.5, health: 30, size: 15, gold: 10 }, // Basic
+            { color: '#B22222', speed: 1.0, health: 80, size: 20, gold: 25 }, // Armored
+            { color: '#FF69B4', speed: 2.0, health: 20, size: 12, gold: 15 }, // Fast
+            { color: '#4B0082', speed: 1.2, health: 150, size: 25, gold: 50 }  // Boss (every 10 waves)
+        ];
 
-    const ball = { x: 450, y: 250, radius: 15, dx: 3, dy: 2 };
+        // Game state
+        const state = {
+            gold: 200,
+            lives: 20,
+            wave: 1,
+            kills: 0,
+            selectedTowerType: null,
+            selectedTower: null,
+            towers: [],
+            enemies: [],
+            projectiles: [],
+            path: [],
+            placingTower: false
+        };
 
-    const goal = { x: 880, y: 200, width: 20, height: 100 };
+        // DOM elements
+        const canvas = document.getElementById('game-board');
+        const ctx = canvas.getContext('2d');
+        const waveInfo = document.getElementById('wave-info');
+        const livesDisplay = document.getElementById('lives');
+        const goldDisplay = document.getElementById('gold');
+        const killsDisplay = document.getElementById('kills');
+        const upgradePanel = document.getElementById('upgrade-panel');
+        const towerLevel = document.getElementById('tower-level');
+        const towerDamage = document.getElementById('tower-damage');
+        const towerRange = document.getElementById('tower-range');
+        const towerSpeed = document.getElementById('tower-speed');
+        const upgradeBtn = document.getElementById('upgrade-btn');
+        const sellBtn = document.getElementById('sell-btn');
 
-    function createCar(color, x, y, controls, name) {
-      return {
-        x, y, angle: 0, speed: 0, boost: 100, maxSpeed: 3.5,
-        acceleration: 0.2, friction: 0.05, color, controls, score: 0, name
-      };
-    }
-
-    const player1 = createCar("#22c55e", 100, 250, {
-      up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", boost: "Shift"
-    }, "Player 1");
-
-    const player2 = createCar("#3b82f6", 800, 250, {
-      up: "w", down: "s", left: "a", right: "d", boost: "/"
-    }, "Player 2");
-
-    const cars = [player1, player2];
-    let paused = false;
-    let gameOver = false;
-    let winner = "";
-
-    function updateCar(car) {
-      const { up, down, left, right, boost } = car.controls;
-      if (keys[up]) car.speed += car.acceleration;
-      if (keys[down]) car.speed -= car.acceleration;
-      if (keys[left]) car.angle -= 0.05;
-      if (keys[right]) car.angle += 0.05;
-      if (keys[boost] && car.boost > 0) {
-        car.speed += 0.5;
-        car.boost -= 1;
-      } else if (car.boost < 100) {
-        car.boost += 0.4;
-      }
-
-      car.speed *= 1 - car.friction;
-      car.speed = Math.max(-car.maxSpeed, Math.min(car.speed, car.maxSpeed + 2));
-      car.x += Math.cos(car.angle) * car.speed;
-      car.y += Math.sin(car.angle) * car.speed;
-      car.x = Math.max(0, Math.min(canvas.width, car.x));
-      car.y = Math.max(0, Math.min(canvas.height, car.y));
-    }
-
-    function update() {
-      if (paused || gameOver) return;
-
-      cars.forEach(updateCar);
-
-      ball.x += ball.dx;
-      ball.y += ball.dy;
-
-      if (ball.x < ball.radius || ball.x > canvas.width - ball.radius) ball.dx *= -1;
-      if (ball.y < ball.radius || ball.y > canvas.height - ball.radius) ball.dy *= -1;
-
-      cars.forEach(car => {
-        const dx = ball.x - car.x;
-        const dy = ball.y - car.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < ball.radius + 20) {
-          ball.dx = Math.cos(car.angle) * 4 + car.speed * 0.5;
-          ball.dy = Math.sin(car.angle) * 4 + car.speed * 0.5;
-          hitSound.play();
+        // Initialize game
+        function init() {
+            createPath();
+            setupEventListeners();
+            startWave();
+            gameLoop();
         }
-      });
 
-      if (
-        ball.x + ball.radius > goal.x &&
-        ball.y > goal.y &&
-        ball.y < goal.y + goal.height
-      ) {
-        player1.score++;
-        goalSound.play();
-        winner = player1.name;
-        pauseReplay();
-      }
+        // Create the enemy path
+        function createPath() {
+            state.path = [
+                { x: 0, y: 150 },
+                { x: 200, y: 150 },
+                { x: 200, y: 450 },
+                { x: 400, y: 450 },
+                { x: 400, y: 150 },
+                { x: 600, y: 150 },
+                { x: 600, y: 450 },
+                { x: 800, y: 450 }
+            ];
+        }
 
-      if (
-        ball.x - ball.radius < 20 &&
-        ball.y > goal.y &&
-        ball.y < goal.y + goal.height
-      ) {
-        player2.score++;
-        goalSound.play();
-        winner = player2.name;
-        pauseReplay();
-      }
+        // Set up event listeners
+        function setupEventListeners() {
+            // Tower selection buttons
+            document.querySelectorAll('.tower-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.selectedTowerType = btn.dataset.type;
+                    state.placingTower = true;
+                });
+            });
 
-      if (player1.score >= 3 || player2.score >= 3) {
-        gameOver = true;
-        paused = true;
-        winner = player1.score > player2.score ? player1.name : player2.name;
-      }
-    }
+            // Canvas click for tower placement/selection
+            canvas.addEventListener('click', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
 
-    function pauseReplay() {
-      paused = true;
-      setTimeout(() => {
-        resetBall();
-        paused = false;
-      }, 1500);
-    }
+                if (state.placingTower) {
+                    placeTower(x, y);
+                } else {
+                    selectTower(x, y);
+                }
+            });
 
-    function resetBall() {
-      ball.x = 450;
-      ball.y = 250;
-      ball.dx = 3;
-      ball.dy = 2;
-    }
+            // Upgrade/sell buttons
+            upgradeBtn.addEventListener('click', upgradeTower);
+            sellBtn.addEventListener('click', sellTower);
+        }
 
-    function drawCar(car) {
-      ctx.save();
-      ctx.translate(car.x, car.y);
-      ctx.rotate(car.angle);
-      ctx.fillStyle = car.color;
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(-20, -10, 40, 20, 6);
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
+        // Place a new tower
+        function placeTower(x, y) {
+            const type = state.selectedTowerType;
+            const towerType = TOWER_TYPES[type];
+            
+            if (state.gold >= towerType.cost) {
+                // Check if position is valid (not on path)
+                if (!isOnPath(x, y)) {
+                    state.towers.push({
+                        type: type,
+                        x: x,
+                        y: y,
+                        level: 1,
+                        damage: towerType.damage,
+                        range: towerType.range,
+                        cooldown: 0,
+                        cooldownMax: 60 / towerType.speed,
+                        projectile: towerType.projectile
+                    });
+                    state.gold -= towerType.cost;
+                    updateUI();
+                }
+            }
+            state.placingTower = false;
+            state.selectedTowerType = null;
+        }
 
-      ctx.font = '14px Arial';
-      ctx.fillStyle = 'white';
-      ctx.textAlign = 'center';
-      ctx.fillText(car.name, car.x, car.y - 15);
+        // Check if position is on the path
+        function isOnPath(x, y) {
+            // Simple check - in a real game you'd want more precise path collision
+            for (let i = 0; i < state.path.length - 1; i++) {
+                const p1 = state.path[i];
+                const p2 = state.path[i + 1];
+                
+                // Check if point is near the line segment
+                if (isPointNearLine(x, y, p1.x, p1.y, p2.x, p2.y, 30)) {
+                    return true;
+                }
+            }
+            return false;
+        }
 
-      ctx.fillStyle = "#999";
-      ctx.fillRect(car.x - 20, car.y + 25, 40, 5);
-      ctx.fillStyle = "#facc15";
-      ctx.fillRect(car.x - 20, car.y + 25, 40 * (car.boost / 100), 5);
-    }
+        function isPointNearLine(px, py, x1, y1, x2, y2, maxDist) {
+            // Line segment vector
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const segmentLength = Math.sqrt(dx * dx + dy * dy);
+            
+            // Project point onto line
+            const u = ((px - x1) * dx + (py - y1) * dy) / (segmentLength * segmentLength);
+            
+            // Find nearest point on segment
+            let nearestX, nearestY;
+            if (u < 0) {
+                nearestX = x1;
+                nearestY = y1;
+            } else if (u > 1) {
+                nearestX = x2;
+                nearestY = y2;
+            } else {
+                nearestX = x1 + u * dx;
+                nearestY = y1 + u * dy;
+            }
+            
+            // Calculate distance
+            const distX = px - nearestX;
+            const distY = py - nearestY;
+            const distance = Math.sqrt(distX * distX + distY * distY);
+            
+            return distance <= maxDist;
+        }
 
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#334155";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Select a tower
+        function selectTower(x, y) {
+            state.selectedTower = null;
+            
+            for (let i = 0; i < state.towers.length; i++) {
+                const tower = state.towers[i];
+                const dx = x - tower.x;
+                const dy = y - tower.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= 20) { // Tower radius
+                    state.selectedTower = tower;
+                    showUpgradePanel(tower);
+                    return;
+                }
+            }
+            
+            // Clicked nothing - hide upgrade panel
+            upgradePanel.style.display = 'none';
+        }
 
-      ctx.fillStyle = "#ef4444";
-      ctx.fillRect(goal.x, goal.y, goal.width, goal.height);
-      ctx.fillRect(0, goal.y, 20, goal.height);
+        // Show upgrade panel for a tower
+        function showUpgradePanel(tower) {
+            upgradePanel.style.display = 'block';
+            towerLevel.textContent = tower.level;
+            towerDamage.textContent = tower.damage;
+            towerRange.textContent = tower.range;
+            towerSpeed.textContent = (60 / tower.cooldownMax).toFixed(1);
+            
+            // Update upgrade cost (scales with level)
+            const upgradeCost = 50 * tower.level;
+            upgradeBtn.textContent = `Upgrade (${upgradeCost}g)`;
+        }
 
-      ctx.beginPath();
-      ctx.fillStyle = "#facc15";
-      ctx.shadowColor = "#facc15";
-      ctx.shadowBlur = 10;
-      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+        // Upgrade selected tower
+        function upgradeTower() {
+            if (!state.selectedTower) return;
+            
+            const tower = state.selectedTower;
+            const upgradeCost = 50 * tower.level;
+            
+            if (state.gold >= upgradeCost) {
+                state.gold -= upgradeCost;
+                tower.level++;
+                tower.damage = Math.floor(tower.damage * 1.5);
+                tower.range = Math.floor(tower.range * 1.1);
+                tower.cooldownMax = Math.floor(tower.cooldownMax * 0.9);
+                
+                showUpgradePanel(tower);
+                updateUI();
+            }
+        }
 
-      cars.forEach(drawCar);
+        // Sell selected tower
+        function sellTower() {
+            if (!state.selectedTower) return;
+            
+            const tower = state.selectedTower;
+            const sellValue = Math.floor(TOWER_TYPES[tower.type].cost * 0.75 * tower.level / 2);
+            
+            state.gold += sellValue;
+            state.towers = state.towers.filter(t => t !== tower);
+            state.selectedTower = null;
+            upgradePanel.style.display = 'none';
+            updateUI();
+        }
 
-      ctx.fillStyle = "#fff";
-      ctx.font = "20px Arial";
-      ctx.fillText(`${player1.name}: ${player1.score}   ${player2.name}: ${player2.score}`, 320, 30);
+        // Start a new wave
+        function startWave() {
+            waveInfo.textContent = `Wave: ${state.wave}`;
+            
+            const enemyCount = 5 + state.wave * 2;
+            const bossWave = state.wave % 10 === 0;
+            
+            for (let i = 0; i < enemyCount; i++) {
+                setTimeout(() => {
+                    let typeIndex;
+                    
+                    if (bossWave && i === enemyCount - 1) {
+                        typeIndex = 3; // Boss
+                    } else {
+                        // Mix of enemy types based on wave
+                        const r = Math.random();
+                        if (state.wave > 5 && r < 0.2) typeIndex = 1; // Armored
+                        else if (state.wave > 3 && r < 0.4) typeIndex = 2; // Fast
+                        else typeIndex = 0; // Basic
+                    }
+                    
+                    const enemyType = ENEMY_TYPES[typeIndex];
+                    const health = Math.floor(enemyType.health * (1 + state.wave * 0.05));
+                    
+                    state.enemies.push({
+                        type: typeIndex,
+                        x: state.path[0].x,
+                        y: state.path[0].y,
+                        health: health,
+                        maxHealth: health,
+                        speed: enemyType.speed,
+                        size: enemyType.size,
+                        gold: enemyType.gold,
+                        pathIndex: 0,
+                        progress: 0
+                    });
+                }, i * 1000);
+            }
+        }
 
-      if (gameOver) {
-        ctx.font = "30px Arial";
-        ctx.fillText(`🏆 Winner: ${winner}`, 350, 100);
-      }
-    }
+        // Main game loop
+        function gameLoop() {
+            update();
+            render();
+            
+            if (state.lives > 0) {
+                requestAnimationFrame(gameLoop);
+            } else {
+                alert(`Game Over! You survived ${state.wave} waves and killed ${state.kills} enemies.`);
+            }
+        }
 
-    if (!CanvasRenderingContext2D.prototype.roundRect) {
-      CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
-        if (typeof radius === 'number') radius = { tl: radius, tr: radius, br: radius, bl: radius };
-        else radius = Object.assign({ tl: 0, tr: 0, br: 0, bl: 0 }, radius);
-        this.beginPath();
-        this.moveTo(x + radius.tl, y);
-        this.lineTo(x + width - radius.tr, y);
-        this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
-        this.lineTo(x + width, y + height - radius.br);
-        this.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
-        this.lineTo(x + radius.bl, y + height);
-        this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
-        this.lineTo(x, y + radius.tl);
-        this.quadraticCurveTo(x, y, x + radius.tl, y);
-        this.closePath();
-      };
-    }
+        // Update game state
+        function update() {
+            updateEnemies();
+            updateTowers();
+            updateProjectiles();
+            
+            // Check if wave is complete
+            if (state.enemies.length === 0 && !state.placingTower) {
+                const allEnemiesSpawned = true; // In a real game, track spawned vs alive
+                if (allEnemiesSpawned) {
+                    state.wave++;
+                    startWave();
+                }
+            }
+        }
 
-    function gameLoop() {
-      update();
-      draw();
-      requestAnimationFrame(gameLoop);
-    }
+        // Update enemies
+        function updateEnemies() {
+            for (let i = state.enemies.length - 1; i >= 0; i--) {
+                const enemy = state.enemies[i];
+                
+                // Move along path
+                const pathIndex = enemy.pathIndex;
+                if (pathIndex < state.path.length - 1) {
+                    const p1 = state.path[pathIndex];
+                    const p2 = state.path[pathIndex + 1];
+                    
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const dirX = dx / distance;
+                    const dirY = dy / distance;
+                    
+                    enemy.progress += enemy.speed;
+                    enemy.x = p1.x + dirX * enemy.progress;
+                    enemy.y = p1.y + dirY * enemy.progress;
+                    
+                    if (enemy.progress >= distance) {
+                        enemy.pathIndex++;
+                        enemy.progress = 0;
+                    }
+                } else {
+                    // Reached end of path
+                    state.lives--;
+                    livesDisplay.textContent = state.lives;
+                    state.enemies.splice(i, 1);
+                    continue;
+                }
+                
+                // Check if dead
+                if (enemy.health <= 0) {
+                    state.gold += enemy.gold;
+                    state.kills++;
+                    killsDisplay.textContent = state.kills;
+                    state.enemies.splice(i, 1);
+                }
+            }
+        }
 
-    gameLoop();
-  </script>
+        // Update towers
+        function updateTowers() {
+            for (const tower of state.towers) {
+                // Cooldown
+                if (tower.cooldown > 0) {
+                    tower.cooldown--;
+                    continue;
+                }
+                
+                // Find target
+                let closestEnemy = null;
+                let closestDist = tower.range;
+                
+                for (const enemy of state.enemies) {
+                    const dx = enemy.x - tower.x;
+                    const dy = enemy.y - tower.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance < closestDist) {
+                        closestDist = distance;
+                        closestEnemy = enemy;
+                    }
+                }
+                
+                // Shoot at target
+                if (closestEnemy) {
+                    tower.cooldown = tower.cooldownMax;
+                    
+                    state.projectiles.push({
+                        x: tower.x,
+                        y: tower.y,
+                        target: closestEnemy,
+                        damage: tower.damage,
+                        color: tower.projectile.color,
+                        size: tower.projectile.size
+                    });
+                }
+            }
+        }
+
+        // Update projectiles
+        function updateProjectiles() {
+            for (let i = state.projectiles.length - 1; i >= 0; i--) {
+                const proj = state.projectiles[i];
+                
+                if (!proj.target || proj.target.health <= 0) {
+                    state.projectiles.splice(i, 1);
+                    continue;
+                }
+                
+                // Move toward target
+                const dx = proj.target.x - proj.x;
+                const dy = proj.target.y - proj.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < 5) { // Hit
+                    proj.target.health -= proj.damage;
+                    state.projectiles.splice(i, 1);
+                } else {
+                    const speed = 10;
+                    proj.x += (dx / distance) * speed;
+                    proj.y += (dy / distance) * speed;
+                }
+            }
+        }
+
+        // Render game
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw path
+            ctx.strokeStyle = '#555';
+            ctx.lineWidth = 30;
+            ctx.beginPath();
+            ctx.moveTo(state.path[0].x, state.path[0].y);
+            for (let i = 1; i < state.path.length; i++) {
+                ctx.lineTo(state.path[i].x, state.path[i].y);
+            }
+            ctx.stroke();
+            
+            // Draw enemies
+            for (const enemy of state.enemies) {
+                ctx.fillStyle = ENEMY_TYPES[enemy.type].color;
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Health bar
+                const healthPercent = enemy.health / enemy.maxHealth;
+                ctx.fillStyle = 'red';
+                ctx.fillRect(enemy.x - 15, enemy.y - 25, 30, 5);
+                ctx.fillStyle = 'green';
+                ctx.fillRect(enemy.x - 15, enemy.y - 25, 30 * healthPercent, 5);
+            }
+            
+            // Draw towers
+            for (const tower of state.towers) {
+                ctx.fillStyle = TOWER_TYPES[tower.type].color;
+                ctx.beginPath();
+                ctx.arc(tower.x, tower.y, 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Range indicator for selected tower
+                if (tower === state.selectedTower) {
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(tower.x, tower.y, tower.range, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
+            
+            // Draw projectiles
+            for (const proj of state.projectiles) {
+                ctx.fillStyle = proj.color;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, proj.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            // Draw tower being placed
+            if (state.placingTower && state.selectedTowerType) {
+                const rect = canvas.getBoundingClientRect();
+                const x = event.clientX - rect.left;
+                const y = event.clientY - rect.top;
+                
+                const towerType = TOWER_TYPES[state.selectedTowerType];
+                ctx.fillStyle = towerType.color + '80'; // Semi-transparent
+                ctx.beginPath();
+                ctx.arc(x, y, 20, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Range indicator
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.beginPath();
+                ctx.arc(x, y, towerType.range, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // Update UI elements
+        function updateUI() {
+            goldDisplay.textContent = state.gold;
+            livesDisplay.textContent = state.lives;
+            killsDisplay.textContent = state.kills;
+        }
+
+        // Start the game
+        init();
+    </script>
 </body>
 </html>
