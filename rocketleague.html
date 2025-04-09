@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Rocket League Lite</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0f172a;
+      color: white;
+      font-family: 'Segoe UI', sans-serif;
+      text-align: center;
+    }
+    canvas {
+      display: block;
+      margin: 10px auto;
+      background: #1e293b;
+      border: 4px solid #fff;
+      border-radius: 10px;
+    }
+    select {
+      margin-top: 10px;
+      padding: 5px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🚀 Rocket League Lite</h1>
+  <p>Player 1: Arrow Keys + Shift | Player 2: WASD + /</p>
+  <select id="aiDifficulty">
+    <option value="easy">AI: Easy</option>
+    <option value="medium" selected>AI: Medium</option>
+    <option value="hard">AI: Hard</option>
+  </select>
+  <canvas id="gameCanvas" width="900" height="500"></canvas>
+
+  <audio id="goalSound" src="https://freesound.org/data/previews/341/341695_5260877-lq.mp3"></audio>
+  <audio id="hitSound" src="https://freesound.org/data/previews/66/66717_931655-lq.mp3"></audio>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const goalSound = document.getElementById("goalSound");
+    const hitSound = document.getElementById("hitSound");
+
+    const keys = {};
+    document.addEventListener("keydown", e => keys[e.key] = true);
+    document.addEventListener("keyup", e => keys[e.key] = false);
+
+    const aiSelect = document.getElementById("aiDifficulty");
+
+    let matchTime = 60; // 60 seconds
+    let gameOver = false;
+    let paused = false;
+    let timer = matchTime;
+    let winner = "";
+
+    const ball = {
+      x: 450, y: 250, radius: 15, dx: 3, dy: 2, spin: 0
+    };
+
+    const goal = { x: 880, y: 200, width: 20, height: 100 };
+
+    function createCar(color, x, y, controls, isAI = false) {
+      return {
+        x, y, angle: 0, speed: 0, boost: 100, isAI,
+        maxSpeed: 3.5, acceleration: 0.2, friction: 0.05,
+        color, controls, score: 0
+      };
+    }
+
+    const player1 = createCar("#22c55e", 100, 250, {
+      up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight", boost: "Shift"
+    });
+
+    const player2 = createCar("#3b82f6", 800, 250, {
+      up: "w", down: "s", left: "a", right: "d", boost: "/"
+    }, true); // AI by default
+
+    const cars = [player1, player2];
+
+    function updateCar(car) {
+      let { up, down, left, right, boost } = car.controls;
+      if (car.isAI) {
+        const level = aiSelect.value;
+        const dx = ball.x - car.x;
+        const dy = ball.y - car.y;
+        const targetAngle = Math.atan2(dy, dx);
+        let diff = targetAngle - car.angle;
+        if (diff > Math.PI) diff -= Math.PI * 2;
+        if (diff < -Math.PI) diff += Math.PI * 2;
+
+        let rotationSpeed = 0.05;
+        if (level === "hard") rotationSpeed = 0.08;
+        else if (level === "easy") rotationSpeed = 0.025;
+
+        car.angle += diff * rotationSpeed;
+        if (level !== "easy") car.speed += car.acceleration;
+      } else {
+        if (keys[up]) car.speed += car.acceleration;
+        if (keys[down]) car.speed -= car.acceleration;
+        if (keys[left]) car.angle -= 0.05;
+        if (keys[right]) car.angle += 0.05;
+
+        if (keys[boost] && car.boost > 0) {
+          car.speed += 0.5;
+          car.boost -= 1;
+        } else if (car.boost < 100) {
+          car.boost += 0.4;
+        }
+      }
+
+      car.speed *= (1 - car.friction);
+      car.speed = Math.max(-car.maxSpeed, Math.min(car.speed, car.maxSpeed + 2));
+      car.x += Math.cos(car.angle) * car.speed;
+      car.y += Math.sin(car.angle) * car.speed;
+
+      car.x = Math.max(0, Math.min(canvas.width, car.x));
+      car.y = Math.max(0, Math.min(canvas.height, car.y));
+    }
+
+    function update() {
+      if (paused || gameOver) return;
+
+      cars.forEach(updateCar);
+
+      ball.x += ball.dx;
+      ball.y += ball.dy;
+      ball.spin *= 0.99;
+
+      if (ball.x < ball.radius || ball.x > canvas.width - ball.radius) ball.dx *= -1;
+      if (ball.y < ball.radius || ball.y > canvas.height - ball.radius) ball.dy *= -1;
+
+      cars.forEach(car => {
+        const dx = ball.x - car.x;
+        const dy = ball.y - car.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < ball.radius + 20) {
+          ball.dx = Math.cos(car.angle) * 4 + car.speed * 0.5;
+          ball.dy = Math.sin(car.angle) * 4 + car.speed * 0.5;
+          ball.spin += (Math.random() - 0.5) * 0.3;
+          hitSound.play();
+        }
+      });
+
+      if (
+        ball.x + ball.radius > goal.x &&
+        ball.y > goal.y &&
+        ball.y < goal.y + goal.height
+      ) {
+        player1.score++;
+        goalSound.play();
+        winner = "Player 1";
+        pauseReplay();
+      }
+
+      if (
+        ball.x - ball.radius < 20 &&
+        ball.y > goal.y &&
+        ball.y < goal.y + goal.height
+      ) {
+        player2.score++;
+        goalSound.play();
+        winner = player2.isAI ? "AI" : "Player 2";
+        pauseReplay();
+      }
+
+      if (--timer <= 0 || player1.score >= 3 || player2.score >= 3) {
+        gameOver = true;
+        paused = true;
+        winner = player1.score > player2.score ? "Player 1" :
+                 player2.score > player1.score ? (player2.isAI ? "AI" : "Player 2") : "Draw";
+      }
+    }
+
+    function pauseReplay() {
+      paused = true;
+      setTimeout(() => {
+        resetBall();
+        paused = false;
+      }, 1500);
+    }
+
+    function resetBall() {
+      ball.x = 450;
+      ball.y = 250;
+      ball.dx = 3;
+      ball.dy = 2;
+    }
+
+    function drawCar(car) {
+      ctx.save();
+      ctx.translate(car.x, car.y);
+      ctx.rotate(car.angle);
+      ctx.fillStyle = car.color;
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-20, -10, 40, 20, 6);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = "#999";
+      ctx.fillRect(car.x - 20, car.y + 25, 40, 5);
+      ctx.fillStyle = "#facc15";
+      ctx.fillRect(car.x - 20, car.y + 25, 40 * (car.boost / 100), 5);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(goal.x, goal.y, goal.width, goal.height);
+      ctx.fillRect(0, goal.y, 20, goal.height);
+
+      ctx.beginPath();
+      ctx.fillStyle = "#facc15";
+      ctx.shadowColor = "#facc15";
+      ctx.shadowBlur = 10;
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      cars.forEach(drawCar);
+
+      ctx.fillStyle = "#fff";
+      ctx.font = "20px Arial";
+      ctx.fillText(`Player 1: ${player1.score}  ${player2.isAI ? "AI" : "Player 2"}: ${player2.score}`, 300, 30);
+      ctx.fillText(`Time Left: ${Math.ceil(timer / 60)}s`, 400, 60);
+
+      if (gameOver) {
+        ctx.font = "30px Arial";
+        ctx.fillText(`🏆 Winner: ${winner}`, 350, 120);
+      }
+    }
+
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function (x, y, width, height, radius) {
+        if (typeof radius === 'number') radius = { tl: radius, tr: radius, br: radius, bl: radius };
+        else radius = Object.assign({ tl: 0, tr: 0, br: 0, bl: 0 }, radius);
+        this.beginPath();
+        this.moveTo(x + radius.tl, y);
+        this.lineTo(x + width - radius.tr, y);
+        this.quadraticCurveTo(x + width, y, x + width, y + radius.tr);
+        this.lineTo(x + width, y + height - radius.br);
+        this.quadraticCurveTo(x + width, y + height, x + width - radius.br, y + height);
+        this.lineTo(x + radius.bl, y + height);
+        this.quadraticCurveTo(x, y + height, x, y + height - radius.bl);
+        this.lineTo(x, y + radius.tl);
+        this.quadraticCurveTo(x, y, x + radius.tl, y);
+        this.closePath();
+      };
+    }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
+</body>
+</html>
